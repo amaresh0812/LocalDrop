@@ -1,0 +1,25 @@
+# Environment — NEVER commit this
+.env
+
+# Uploaded files — user data should never be in version control
+uploads/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Flask
+instance/
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

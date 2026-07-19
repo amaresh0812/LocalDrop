@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalDrop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="shell">
+        <section class="hero">
+            <h1>LocalDrop</h1>
+            <p>Send text or files to another device in seconds. No login, no account, and everything disappears automatically after 5 minutes.</p>
+            <span class="pill">🔑 7-digit code</span>
+            <span class="pill">🔥 Burn after Download</span>
+            <span class="pill">🔒 No registration required</span>
+            <span class="pill">📂 Multifile support</span>
+
+            
+        </section>
+
+        <div class="grid">
+            <section class="card">
+                <h2>Send a transfer</h2>
+                <p>Choose whether you want to share text or a file.</p>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="flash {{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <div class="tabs">
+                    <button type="button" class="tab-btn active" data-mode="text">Text</button>
+                    <button type="button" class="tab-btn" data-mode="file">File</button>
+                </div>
+
+                <form action="{{ url_for('send_transfer') }}" method="post" enctype="multipart/form-data">
+                    <input type="hidden" id="modeInput" name="mode" value="text">
+
+                    <div id="textPanel" class="panel active">
+                        <label for="textInput">Text content</label>
+                        <textarea id="textInput" name="text" placeholder="Paste a note, link, code, or anything you want to share."></textarea>
+                    </div>
+
+                    <div id="filePanel" class="panel">
+                        <div id="dropZone" class="dropzone" role="button" tabindex="0" aria-label="Upload file">
+                            <strong id="dropTitle">Drop your file here</strong>
+                            <p class="hint" id="dropHint">Drag and drop a file, or click to browse</p>
+                            <div class="tiny" id="selectedFile">No file selected yet</div>
+                            <input id="fileInput" type="file" name="file" accept=".png,.jpg,.jpeg,.pdf,.doc,.docx,.txt" hidden>
+                        </div>
+                        <div class="tiny">Allowed types: PNG, JPEG, PDF, Word, TXT · Max 10 MB</div>
+                    </div>
+
+                    <button class="btn btn-primary" type="submit">Generate transfer code</button>
+                </form>
+
+                {% if created_transfer %}
+                    <div class="code-card">
+                        <h3>Transfer ready</h3>
+                        <div class="code-box">
+                            {% for digit in created_transfer.code %}
+                                <div class="digit">{{ digit }}</div>
+                            {% endfor %}
+                        </div>
+                        <div class="meta">Share this code with the receiving device. It will expire in 5 minutes.</div>
+                        <div id="countdown" class="meta" data-expires="{{ created_transfer.expires_at | int }}">Loading countdown...</div>
+                        {% if created_transfer.type == 'file' %}
+                            <a class="download-link" href="{{ url_for('download_transfer', code=created_transfer.code) }}">Download file now</a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </section>
+
+            <section class="card">
+                <h2>Receive a transfer</h2>
+                <p>Enter the 7-digit code from the sender and open the shared content.</p>
+
+                <form action="{{ url_for('retrieve_transfer') }}" method="post">
+                    <label for="codeInput">Code</label>
+                    <input id="codeInput" class="input" type="text" name="code" maxlength="7" placeholder="Enter 7 digits" inputmode="numeric">
+                    <button class="btn btn-secondary" type="submit">Retrieve transfer</button>
+                </form>
+
+                {% if retrieved_transfer %}
+                    <div class="result-box">
+                        {% if retrieved_transfer.type == 'text' %}
+                            <strong>Text received</strong>
+                            <p class="tiny">This transfer was consumed after opening it.</p>
+                            <textarea id="receivedText" class="received-text" readonly>{{ retrieved_transfer.content }}</textarea>
+                            <button class="btn btn-primary" id="copyButton" onclick="copyToClipboard()">Copy to clipboard</button>
+                            
+                        {% else %}
+                            <strong>File received</strong>
+                            <p class="tiny">{{ retrieved_transfer.filename }} · {{ (retrieved_transfer.size / 1024 / 1024) | round(2) }} MB</p>
+                            <a class="download-link" href="{{ url_for('download_transfer', code=retrieved_transfer.code) }}">Download file</a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </section>
+        </div>
+    </div>
+
+    <script>
+        const tabs = document.querySelectorAll('.tab-btn');
+        const textPanel = document.getElementById('textPanel');
+        const filePanel = document.getElementById('filePanel');
+        const modeInput = document.getElementById('modeInput');
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const selectedFile = document.getElementById('selectedFile');
+        const dropTitle = document.getElementById('dropTitle');
+        const dropHint = document.getElementById('dropHint');
+
+        function updateDropZone(file) {
+            if (file) {
+                selectedFile.textContent = `Selected: ${file.name}`;
+                dropTitle.textContent = 'File ready to transfer';
+                dropHint.textContent = 'Click or drop another file';
+            } else {
+                selectedFile.textContent = 'No file selected yet';
+                dropTitle.textContent = 'Drop your file here';
+                dropHint.textContent = 'Drag and drop a file, or click to browse';
+            }
+        }
+
+        tabs.forEach(button => {
+            button.addEventListener('click', () => {
+                tabs.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                const mode = button.dataset.mode;
+                modeInput.value = mode;
+                if (mode === 'file') {
+                    textPanel.classList.remove('active');
+                    filePanel.classList.add('active');
+                } else {
+                    filePanel.classList.remove('active');
+                    textPanel.classList.add('active');
+                }
+            });
+        });
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInput.click();
+            }
+        });
+        dropZone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            dropZone.classList.add('dragging');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+        dropZone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            dropZone.classList.remove('dragging');
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                fileInput.files = event.dataTransfer.files;
+                updateDropZone(file);
+            }
+        });
+        fileInput.addEventListener('change', () => {
+            updateDropZone(fileInput.files[0]);
+        });
+        async function copyToClipboard() {
+            const receivedText = document.getElementById('receivedText');
+            const copyButton = document.getElementById('copyButton');
+
+            if (!receivedText || !copyButton) {
+                return;
+            }
+
+            const textToCopy = receivedText.value;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(textToCopy);
+                } else {
+                    receivedText.focus();
+                    receivedText.select();
+                    document.execCommand('copy');
+                }
+
+                copyButton.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyButton.textContent = 'Copy to clipboard';
+                }, 1500);
+            } catch (error) {
+                copyButton.textContent = 'Copy failed';
+                setTimeout(() => {
+                    copyButton.textContent = 'Copy to clipboard';
+                }, 1500);
+            }
+        }
+
+        const countdownEl = document.getElementById('countdown');
+        if (countdownEl) {
+            const expiresAt = Number(countdownEl.dataset.expires || 0);
+            const tick = () => {
+                const remaining = Math.max(0, Math.floor((expiresAt * 1000 - Date.now()) / 1000));
+                const minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
+                const seconds = String(remaining % 60).padStart(2, '0');
+                countdownEl.textContent = remaining > 0 ? `Deletes in ${minutes}:${seconds}` : 'Expired';
+            };
+            tick();
+            setInterval(tick, 1000);
+        }
+    </script>
+</body>
+</html>
